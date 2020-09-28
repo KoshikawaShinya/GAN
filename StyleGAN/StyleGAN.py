@@ -5,11 +5,46 @@ import cv2
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow.keras.backend as K
-from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, Reshape
+from tensorflow.keras.layers import Activation, BatchNormalization, Dense, Dropout, Flatten, Reshape, Upsampling2D
 from tensorflow.keras.layers.convolutional import Conv2D, Conv2DTranspose
 from tensorflow.keras.layers.advanced_activations import LeakyReLU
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
+from AdaIN import AdaInstanceNormalization
+
+
+def g_block(input, style, noise, filter, u=True):
+
+    b = Dense(filter)(style)
+    b = Reshape([1, 1, filter])(b)
+    g = Dense(filter)(style)
+    g = Reshape([1, 1, filter])(g)
+
+    n = Conv2D(filters=filter, kernel_size=3, padding='same', kernel_initializer='he_normal')(noise)
+
+    if u:
+        out = Upsampling2D(interpolation = 'bilinear')(inp)
+        out = Conv2D(filters = filter, kernel_size = 3, padding = 'same', kernel_initializer = 'he_normal')(out)
+    else:
+        out = Activation('linear')(input)
+
+    out = AdaInstanceNormalization()([out, b, g])
+    out = add([out, n])
+    out = LeakyReLU(0.01)(out)
+
+    b = Dense(filter)(style)
+    b = Reshape([1, 1, filter])(b)
+    g = Dense(filter)(style)
+    g = Reshape([1, 1, filter])(g)
+
+    n = Conv2D(filters = filter, kernel_size = 1, padding = 'same', kernel_initializer = 'he_normal')(noise)
+
+    out = Conv2D(filters = filter, kernel_size = 3, padding = 'same', kernel_initializer = 'he_normal')(out)
+    out = AdaInstanceNormalization()([out, b, g])
+    out = add([out, n])
+    out = LeakyReLU(0.01)(out)
+
+    return out
 
 
 def build_generator(mapping_network, synthesisnetwork):
@@ -36,7 +71,7 @@ def AdaIN(x):
     # x[0]の正規化
     mean = K.mean(x[0], axis=[1, 2], keepdims=True)
     std = K.std(x[0], axis=[1, 2], keepdims=True) + 1e-7
-    # y : [0, 1]
+
     y = (x[0] - mean) / std
 
     # gammaとbetaのreshape
